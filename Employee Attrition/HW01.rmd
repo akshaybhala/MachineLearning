@@ -1,0 +1,434 @@
+# Akshay Bhala
+
+## Employee Attrition
+
+## HW01
+
+
+## Importing Libraries
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(arules)
+library(ggplot2)
+library(arulesViz)
+library(shiny)
+library(rsconnect)
+```
+
+### Reading file using read_csv
+```{r}  
+myData <- read_csv("employee_attrition.csv")
+View(myData)  
+myData[myData==""] <- NA
+```  
+### Checking count of NA  
+```{r}  
+sum(is.na(myData))
+```
+### Mode function
+```{r}
+getmode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+```
+### Removing Outliers function
+```{r}
+outlierKD <- function(dt, var) {
+     var_name <- eval(substitute(var),eval(dt))
+     na1 <- sum(is.na(var_name))
+     m1 <- mean(var_name, na.rm = T)
+     par(mfrow=c(2, 2), oma=c(0,0,3,0))
+     boxplot(var_name, main="With outliers")
+     hist(var_name, main="With outliers", xlab=NA, ylab=NA)
+     outlier <- boxplot.stats(var_name)$out
+     mo <- mean(outlier)
+     var_name <- ifelse(var_name %in% outlier, NA, var_name)
+     boxplot(var_name, main="Without outliers")
+     hist(var_name, main="Without outliers", xlab=NA, ylab=NA)
+     title("Outlier Check of", outer=TRUE)
+     na2 <- sum(is.na(var_name))
+     cat("Outliers identified:", na2 - na1, "n")
+     cat("Propotion (%) of outliers:", round((na2 - na1) / sum(!is.na(var_name))*100, 1), "n")
+     cat("Mean of the outliers:", round(mo, 2), "n")
+     m2 <- mean(var_name, na.rm = T)
+     cat("Mean without removing outliers:", round(m1, 2), "n")
+     cat("Mean if we remove outliers:", round(m2, 2), "n")
+     dt[as.character(substitute(var))] <- invisible(var_name)
+     assign(as.character(as.list(match.call())$dt), dt, envir = .GlobalEnv)
+     cat("Outliers successfully removed", "n")
+     return(invisible(dt))
+     }
+```
+### Coverting the columns to factors function
+```{r}
+converttofactor <- function(vec)
+{
+  vec <- trimws(as.character(vec))
+  vec <- as.factor(vec)
+}
+```
+
+As we saw there are total 11 NA's in the data set.Approach to remove NA's is as follows:
+- checking outliers in columns. If outliers/Skewness present, remove them and then take the mean to replace Na's and other blank columns
+- if no outliers just take the mean of numeric columns
+- for ordinal / categorical columns use mode to remove NA's 
+
+
+### Checking if outliers exist for numeric columns and outcasting those outliers and NA's
+```{r}
+summary(myData$DistanceFromHome)
+outlierKD(myData, DistanceFromHome)
+myData$DistanceFromHome[(is.na(myData$DistanceFromHome))]<- round(mean(myData$DistanceFromHome,na.rm=TRUE))
+
+summary(myData$TotalWorkingYears)
+outlierKD(myData, TotalWorkingYears)
+myData$TotalWorkingYears[(is.na(myData$TotalWorkingYears))]<- round(mean(myData$TotalWorkingYears,na.rm=TRUE))
+
+summary(myData$YearsWithCurrManager)
+outlierKD(myData, YearsWithCurrManager)
+myData$YearsWithCurrManager[(is.na(myData$YearsWithCurrManager))]<- round(mean(myData$YearsWithCurrManager,na.rm=TRUE))
+```
+### Replacing Na's using mode / mean for respective columns
+```{r}
+summary(myData$JobLevel)
+myData$JobLevel[(is.na(myData$JobLevel))]<- getmode(myData$JobLevel)
+
+summary(myData$PercentSalaryHike)
+myData$PercentSalaryHike[(is.na(myData$PercentSalaryHike))]<- getmode(myData$PercentSalaryHike)
+
+summary(myData$PerformanceRating)
+myData$PerformanceRating[(is.na(myData$PerformanceRating))]<- getmode(myData$PerformanceRating)
+
+summary(myData$RelationshipSatisfaction)
+myData$RelationshipSatisfaction[(is.na(myData$RelationshipSatisfaction))]<- getmode(myData$RelationshipSatisfaction)
+
+summary(myData$YearsSinceLastPromotion)
+myData$YearsSinceLastPromotion[(is.na(myData$YearsSinceLastPromotion))]<- round(mean(myData$YearsSinceLastPromotion,na.rm=TRUE))
+```
+### Replacing Na's using mode function for columns consisting characters
+```{r}
+myData$Gender[(is.na(myData$Gender))]<- getmode(myData$Gender)
+
+myData$OverTime[(is.na(myData$OverTime))]<- getmode(myData$OverTime)
+```
+### Checking are there any Na's left
+```{r}
+sum(is.na(myData))
+```
+
+## Converting character to factors
+```{r}
+char_var <- sapply(myData, is.character)
+myData[, char_var] <- lapply(myData[, char_var], as.factor)
+str(myData)
+```
+
+
+## Exploratory data analysis
+We are performing Exploratory Data analysis to check which variables are responsible for Employee Attrition
+```{r}
+ETD <- myData %>% group_by(Attrition) %>%
+  summarise(count=n(), DailyRate=round(mean(DailyRate), 1), 
+      DistanceFromHome=round(mean(DistanceFromHome),1),EnvironmentSatisfaction=round(mean(EnvironmentSatisfaction),1),HourlyRate=round(mean(HourlyRate),1),
+      JobSatisfaction=round(mean(JobSatisfaction),1),MonthlyIncome=round(mean(MonthlyIncome),1),NumCompaniesWorked=round(mean(NumCompaniesWorked),1),PercentSalaryHike=round(mean(PercentSalaryHike),1),PerformanceRating=round(mean(PerformanceRating),1),RelationshipSatisfaction=round(mean(RelationshipSatisfaction),1),TotalWorkingYears=round(mean(TotalWorkingYears),1),TrainingTimesLastYear=round(mean(TrainingTimesLastYear),1),WorkLifeBalance=round(mean(WorkLifeBalance),1),YearsAtCompany=round(mean(YearsAtCompany),1),YearsInCurrentRole=round(mean(YearsInCurrentRole),1),YearsSinceLastPromotion=round(mean(YearsSinceLastPromotion),1),YearsWithCurrManager=round(mean(YearsWithCurrManager),1))
+ETD <- as.data.frame(t(ETD))
+ETD
+```
+
+We have observed that Employee Attrition = yes has a count of 185 which can be due to low Daily Rate/ Hourly Rate /Monthly Income and more Distance from Home. We will further explore whether this is true using various visualizations and ARM.
+
+## Converting to Factors
+```{r}
+myData$Education <- converttofactor(myData$Education)
+myData$EnvironmentSatisfaction <- converttofactor(myData$EnvironmentSatisfaction)
+myData$JobInvolvement <- converttofactor(myData$JobInvolvement)
+myData$JobLevel <- converttofactor(myData$JobLevel)
+myData$JobSatisfaction <- converttofactor(myData$JobSatisfaction)
+myData$NumCompaniesWorked <- converttofactor(myData$NumCompaniesWorked)
+myData$PerformanceRating <- converttofactor(myData$PerformanceRating)
+myData$RelationshipSatisfaction <- converttofactor(myData$RelationshipSatisfaction)
+myData$StockOptionLevel <- converttofactor(myData$StockOptionLevel)
+myData$TrainingTimesLastYear <- converttofactor(myData$TrainingTimesLastYear)
+myData$NumCompaniesWorked <- converttofactor(myData$NumCompaniesWorked)
+myData$WorkLifeBalance<-converttofactor(myData$WorkLifeBalance)
+myData$Attrition <- as.factor(myData$Attrition)
+myData$BusinessTravel <- as.factor(myData$BusinessTravel)
+myData$Department <- as.factor(myData$Department)
+myData$EducationField <- as.factor(myData$EducationField)
+myData$Gender <- as.factor(myData$Gender)
+myData$JobRole <- as.factor(myData$JobRole)
+myData$MaritalStatus <- as.factor(myData$MaritalStatus)
+myData$OverTime <- as.factor(myData$OverTime)
+```
+
+## Our data is ready
+```{r}
+str(myData)
+```
+
+## removing columns like EmployeeCount/EmployeeNumber/Over18/StandardHours
+```{r}
+df1 <- myData
+df1 <- df1[,c(-9,-10,-22,-27)] 
+```
+
+## Data Visualization
+
+## 1
+```{r}
+agevsAttrition <- ggplot(df1) +
+  aes(x = df1$Age, fill = df1$Attrition) +
+  geom_bar(position = "dodge") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  ggtitle("agevsAttrition") +
+  labs(x = "Attrition", y = "Count", fill = "Attrition")
+agevsAttrition
+```
+
+Analysis: The above graph shows that between age 20 to 35 there are highest no. of employee attrition.
+
+## 2
+```{r}
+BTvsAttrition <- ggplot(df1) +
+  aes(x = df1$BusinessTravel, fill = df1$Attrition) +
+  geom_bar(position = "dodge") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  ggtitle("Business TravelvsAttrition") +
+  labs(x = "Business Travel", y = "Count", fill = "Attrition")
+BTvsAttrition
+```
+
+Analysis: The above graph shows that Employees who travel rarely tends more towards employee attrition.
+
+## 3
+```{r}
+DeptvsAttrition <- ggplot(df1) +
+  aes(x = df1$Department, fill = df1$Attrition) +
+  geom_bar(position = "dodge") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  ggtitle("DepartmentvsAttrition") +
+  labs(x = "Department", y = "Count", fill = "Attrition")
+DeptvsAttrition
+```
+
+Analysis: The above graph shows that Employees in sales field shows more employee attrition.
+
+## 4
+```{r}
+EdvsAttrition <- ggplot(df1) +
+  aes(x = df1$Education, fill = df1$Attrition) +
+  geom_bar(position = "dodge") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  ggtitle("Education LevelvsAttrition") +
+  labs(x = "Education", y = "Count", fill = "Attrition")
+EdvsAttrition
+```
+
+Analysis: The above graph shows that Employees with average education are more in employee attrition.
+
+## 5
+```{r}
+EdfvsAttrition <- ggplot(df1) +
+  aes(x = df1$EducationField, fill = df1$Attrition) +
+  geom_bar(position = "dodge") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  ggtitle("Education FieldvsAttrition") +
+  labs(x = "EducationField", y = "Count", fill = "Attrition")
+EdfvsAttrition
+```
+
+Analysis: The above graph shows that Employees from mediacal and life science field have highest no. of employees and large amount of employees tends toward employee attrition
+
+## 6
+```{r}
+EvsvsAttrition <- ggplot(df1) +
+  aes(x = df1$EnvironmentSatisfaction, fill = df1$Attrition) +
+  geom_bar(position = "dodge") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  ggtitle("EnvironmentSatisfactionvsAttrition") +
+  labs(x = "EnvironmentSatisfaction", y = "Count", fill = "Attrition")
+EvsvsAttrition
+```
+
+Analysis: The above graph shows that lower the Environment Satisfaction more the number of Attrition.
+
+## 7
+```{r}
+genderVsAttrition <- ggplot(df1) +
+  aes(x = df1$Gender, fill = df1$Attrition) +
+  geom_bar(position = "dodge") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  ggtitle("Gender Count V/s Attrition") +
+  labs(x = "Gender", y = "Count", fill = "Attrition")
+genderVsAttrition
+```
+
+Analysis: The above graph shows that Male Employees tends more towards employee attrition.
+
+## 8
+```{r}
+JobInvolvementVsAttrition <- ggplot(df1) +
+  aes(x = df1$JobInvolvement, fill = df1$Attrition) +
+  geom_bar(position = "dodge") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  ggtitle("JobInvolvement V/s Attrition") +
+  labs(x = "JobInvolvement", y = "Count", fill = "Attrition")
+JobInvolvementVsAttrition
+```
+
+## 9
+```{r}
+JobRoleVsAttrition <- ggplot(df1) +
+  aes(x = df1$JobRole, fill = df1$Attrition) +
+  geom_bar(position = "dodge") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  ggtitle("JobRole V/s Attrition") +
+  labs(x = "JobRole", y = "Count", fill = "Attrition")
+JobRoleVsAttrition
+```
+
+Analysis: The above graph shows that Employees who are sales executive/Sales Representative tends more towards employee attrition.
+
+## 10
+```{r}
+MaritalStatusVsAttrition <- ggplot(df1) +
+  aes(x = df1$MaritalStatus, fill = df1$Attrition) +
+  geom_bar(position = "dodge") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  ggtitle("MaritalStatus V/s Attrition") +
+  labs(x = "MaritalStatus", y = "Count", fill = "Attrition")
+MaritalStatusVsAttrition
+```
+
+Analysis: The above graph shows that Employees who are single tends to show employee attrition.
+
+## 11
+```{r}
+OverTimeVsAttrition <- ggplot(df1) +
+  aes(x = df1$OverTime, fill = df1$Attrition) +
+  geom_bar(position = "dodge") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  ggtitle("OverTime V/s Attrition") +
+  labs(x = "OverTime", y = "Count", fill = "Attrition")
+OverTimeVsAttrition
+```
+
+Analysis: The above graph shows that there are few Employees who work overtime and among them almost half of employees tends towards Employee Attrition.
+
+## 12
+```{r}
+PerformanceRatingVsAttrition <- ggplot(df1) +
+  aes(x = df1$PerformanceRating, fill = df1$Attrition)+
+  geom_bar(position = "dodge")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  ggtitle("PerformanceRatingV/s Attrition")+
+  labs(x = "PerformanceRating", y = "Count", fill = "Attrition")
+PerformanceRatingVsAttrition
+```
+
+## 13
+```{r}
+RelationshipSatisfactionVsAttrition <- ggplot(df1) +
+  aes(x = df1$RelationshipSatisfaction, fill = df1$Attrition)+
+  geom_bar(position = "dodge")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  ggtitle("RelationshipSatisfactionV/s Attrition")+
+  labs(x = "RelationshipSatisfaction", y = "Count", fill = "Attrition")
+RelationshipSatisfactionVsAttrition
+```
+
+Analysis: The above two graphs shows that Employees with low performance rating and Relationship Satisfaction tends towards Employee Attrition.
+
+## 14
+```{r}
+YearsInCurrentRoleVsAttrition <- ggplot(df1) +
+  aes(x = df1$YearsInCurrentRole, fill = df1$Attrition)+
+  geom_bar(position = "dodge")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  ggtitle("YearsInCurrentRoleV/s Attrition")+
+  labs(x = "YearsInCurrentRole", y = "Count", fill = "Attrition")
+YearsInCurrentRoleVsAttrition
+```
+
+Analysis: The above graphs shows that Employees new Employees tends more towards Employee Attrition.
+
+## Discretization
+```{r}
+df1$Age <- discretize(df1$Age, method = "frequency", breaks = 3, 
+                       labels = c("young", "adult", "old"), order = T)
+df1$DailyRate <- discretize(df1$DailyRate, method = "frequency", breaks = 4, 
+                       labels = c("low", "Medium", "High","Higher"), order = T)
+df1$DistanceFromHome<-discretize(df1$DistanceFromHome,method = "frequency", breaks = 4, 
+                       labels = c("low", "Medium", "High","Higher"), order = T) 
+df1$HourlyRate<-discretize(df1$HourlyRate,method = "frequency", breaks = 4, 
+                       labels = c("low", "Medium", "High","Higher"), order = T)                  
+df1$MonthlyIncome<-discretize(df1$MonthlyIncome,method = "frequency", breaks = 4, 
+                       labels = c("low", "Medium", "High","Higher"), order = T)                  
+df1$MonthlyRate<-discretize(df1$MonthlyRate,method = "frequency", breaks = 4, 
+                       labels = c("low", "Medium", "High","Higher"), order = T)   
+df1$PercentSalaryHike<-discretize(df1$PercentSalaryHike,method = "frequency", breaks = 4, 
+                       labels = c("<5%", "5%<hike<10%", "10%<Hike<20%",">20%"), order = T)
+df1$YearsAtCompany<-discretize(df1$YearsAtCompany,method = "frequency", breaks = 4, 
+                       labels = c("<5years", "5<Years<10", "10<Years<20",">20"), order = T)
+df1$YearsInCurrentRole<-discretize(df1$YearsInCurrentRole,method = "frequency", breaks = 4, 
+                       labels = c("<5years", "5<Years<10", "10<Years<20",">20"), order = T)
+df1$TotalWorkingYears<-cut(df1$TotalWorkingYears, breaks = 5,
+                                 labels = c("<5years", "5<Years<10", "10<Years<20","20<years<25",">25"), order = T)
+df1$YearsSinceLastPromotion<-cut(df1$YearsSinceLastPromotion, breaks = 5,
+                       labels = c("<5years", "5<Years<10", "10<Years<20","20<years<25",">25"), order = T)
+df1$YearsWithCurrManager<-discretize(df1$YearsWithCurrManager,method = "frequency", breaks = 4, 
+                       labels = c("<5years", "5<Years<10", "10<Years<20",">20"), order = T)
+```
+
+## Transforming Dataframe into Transaction Matrix
+```{r}
+SS<-as(df1,"transactions")
+```
+
+## ARM with default settings displaying top 10 rules with the high confidence
+```{r}
+Attrition_rules <- apriori(data=SS)
+inspect(head(sort(Attrition_rules, by='confidence'),5))
+plot(Attrition_rules)
+```
+Analysis: From the above plot it is clear that, with decrease in support both the confidence and lift increases. Going forward, lets fine tune the function.
+
+## ARM fine tuned
+```{r}
+Attrition_rules <- apriori(data=SS, parameter=list (supp=0.3,conf =0.5, minlen= 3, maxtime=10, target = "rules"))
+inspect(head(sort(Attrition_rules, by='confidence'),5))
+plot(Attrition_rules)
+```
+Analysis: With the minimum Suppport and Confidence set to 0.5, we set the minimum rule length to 3 and maximum amount of time allowed to check for subsets to 10 we get 306 rules. Most of which are in to left corner the low support, high confidence and lift area
+
+## The goal of this assignment is to use the Association Rule Mining to predict when employee Attrition would be Yes / No. So, let us set the rhs to the values of the Attrition variable and the target to "rules"
+
+## ARM to predict Attrition =Yes
+```{r}
+Association_rules1 <- apriori(data=SS, parameter=list (supp=0.046,conf =0.25, minlen= 3, maxtime=19, maxlen=7, target = "rules"), appearance = list(rhs=c("Attrition=Yes")))
+inspect(head(sort(Association_rules1, by='confidence'),10))
+plot(Association_rules1)
+```
+
+Analysis: Keeping Rhs as attrition = yes we get 82 rules with maximum confidence as 0.4833 amd the coressponding support as 0.04931. The Employee will mostly tend towards attrition when job level =1/ overtime = yes / low monthly income / 0 stock option / years since last promotion is less than 5 years / new employee.
+
+## ARM to predict Attrition = NO
+```{r}
+Association_rules2 <- apriori(data=SS, parameter=list (supp=0.25,conf =0.25, minlen= 3, maxtime=19, maxlen=7, target = "rules"), appearance = list(rhs=c("Attrition=No")))
+inspect(head(sort(Association_rules2, by='confidence'),10))
+plot(Association_rules2)
+```
+
+Analysis: Keeping Rhs as attrition = No we get 118 rules with maximum confidence as 0.93940 amd the coressponding support as 0.0271. The Employee will not tend towards attrition when  overtime = no / high monthly income / good stock option / have good work life balance/ Business travel = rarely / department is Research and development / married.
+
+#Shiny App:
+
+Lets us now change the hyperparameters in apriori rules using Shiny App:
+(please put support below o.o5 for rules=yes)
+
+## https://akshaybhala.shinyapps.io/HW01/
+
+
