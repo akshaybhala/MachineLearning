@@ -3,13 +3,5 @@
 Munged raw airline data, performed data exploratory analysis using various statistical and visual plots and produced data driven suggestions using Support Vector Machine(SVM), Random Forest and Association Rules.
 
 
-<p align="center">
-  <img src="https://github.com/akshaybhala/MachineLearning/blob/main/Analysis-of-Airline-Data-master/Airlinestatus.png" width="350">
-  <img src="https://github.com/akshaybhala/MachineLearning/blob/main/Analysis-of-Airline-Data-master/NPS.png" width="350">
-</p>
-
-<object data="https://github.com/akshaybhala/MachineLearning/blob/main/Analysis-of-Airline-Data-master/IST%20687%20Group%201.pdf" type="application/pdf" width="700px" height="700px">
-    <embed src="https://github.com/akshaybhala/MachineLearning/blob/main/Analysis-of-Airline-Data-master/IST%20687%20Group%201.pdf">
-        <p>This browser does not support PDFs. Please download the PDF to view it: <a href="http://yoursite.com/the.pdf">Download PDF</a>.</p>
-    </embed>
-</object>
+![alt text](https://github.com/akshaybhala/MachineLearning/blob/main/Analysis-of-Airline-Data-master/Airlinestatus.png)
+![alt text](https://github.com/akshaybhala/MachineLearning/blob/main/Analysis-of-Airline-Data-master/NPS.png")
