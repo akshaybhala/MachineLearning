@@ -1,7 +1,0 @@
-#Analysis of Airline Data
-(R project) 
-Munged raw airline data, performed data exploratory analysis using various statistical and visual plots and produced data driven suggestions using Support Vector Machine(SVM), Random Forest and Association Rules.
-
-
-![alt text](https://github.com/akshaybhala/MachineLearning/blob/main/Analysis-of-Airline-Data-master/Airlinestatus.png)
-![alt text](https://github.com/akshaybhala/MachineLearning/blob/main/Analysis-of-Airline-Data-master/NPS.png")
