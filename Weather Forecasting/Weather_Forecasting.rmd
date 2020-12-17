@@ -1,0 +1,1477 @@
+```{r}
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(imputeTS)
+library(psych)
+library(cluster)
+library(factoextra)
+library(outliers)
+library(OutlierDetection)
+library(fastDummies)
+library(ggvis)
+library(ggpubr)
+library(recipes)
+```
+
+## Loading Data Set
+```{r}
+myData <- read.csv("Weather_Forecasting.csv")
+View(myData)
+
+```
+
+# Step1: Data Cleaning
+
+## Removing Duplicates if any
+```{r}
+myData1 <- myData %>% distinct(Location,MinTemp,MaxTemp,Rainfall,Evaporation,Sunshine,WindGustDir,WindGustSpeed,WindDir,WindSpeed,Humidity,Pressure,Cloud,Temp,RainToday,RainTomorrow)
+str(myData1)
+```
+## Removing NA's
+
+### Discarding these columns as they consist dirty data i.e missing values >50%
+```{r}
+myData1$Evaporation <- NULL
+myData1$Sunshine <- NULL
+myData1$Cloud <- NULL
+```
+
+*mode function*
+```{r}
+  getmode <- function(m) {
+  um <- na.omit(unique(m) )
+ tab <- tabulate(match(m, um)); um[tab == max(tab) ]
+}
+```
+
+```{r}
+
+      MinTemp_location <- myData1 %>%
+      group_by(Location)%>%
+      summarise(median(MinTemp, na.rm=TRUE))
+    
+    placeNA <- which(is.na(myData1$MinTemp))
+    for (i in placeNA) {
+      myData1$MinTemp[i] <- as.numeric(MinTemp_location[MinTemp_location$Location==myData1[i,"Location"],2])
+    }
+    
+
+```
+
+```{r}
+MaxTemp_location <- myData1 %>%
+      group_by(Location)%>%
+      summarise(median(MaxTemp, na.rm=TRUE))
+    
+    placeNA  <- which(is.na(myData1$MaxTemp))
+    for (i in placeNA ) {
+      myData1$MaxTemp[i] <- as.numeric(MaxTemp_location[MaxTemp_location$Location==myData1[i,"Location"],2])
+    }
+```
+
+
+```{r}
+Rainfall_location <- myData1 %>%
+      group_by(Location)%>%
+      summarise(median(Rainfall, na.rm=TRUE))
+    
+    placeNA  <- which(is.na(myData1$Rainfall))
+    for (i in placeNA ) {
+      myData1$Rainfall[i] <- as.numeric(Rainfall_location[Rainfall_location$Location==myData1[i,"Location"],2])
+    }
+```
+
+```{r}
+
+    placeNA  <- which((myData1$WindGustDir == ''))
+    for (i in placeNA ) {
+      myData1$WindGustDir[i] <- getmode(myData1$WindGustDir)
+    }
+```
+
+```{r}
+myData1$WindGustSpeed[which(is.na(myData1$WindGustSpeed))] <- median(myData1$WindGustSpeed, na.rm = TRUE)
+```
+
+```{r}
+
+    placeNA  <- which(myData1$WindDir == "")
+   for (i in placeNA ) {
+      myData1$WindDir[i] <- getmode(myData1$WindDir)
+    }
+```
+
+```{r}
+windspeed_location <- myData1 %>%
+      group_by(Location)%>%
+      summarise(median(WindSpeed, na.rm=TRUE))
+    
+    placeNA  <- which(is.na(myData1$WindSpeed))
+    for (i in placeNA ) {
+      myData1$WindSpeed[i] <- as.numeric(windspeed_location[windspeed_location$Location==myData1[i,"Location"],2])
+    }
+```
+
+```{r}
+humidity_location <- myData1 %>%
+      group_by(Location)%>%
+      summarise(median(Humidity, na.rm=TRUE))
+    
+    placeNA  <- which(is.na(myData1$Humidity))
+    for (i in placeNA ) {
+      myData1$Humidity[i] <- as.numeric(humidity_location[humidity_location$Location==myData1[i,"Location"],2])
+    }
+
+```
+
+```{r}
+placeNA  <- which(is.na(myData1$Pressure))
+    for (i in placeNA ) {
+      myData1$Pressure[i] <- median(myData1$Pressure, na.rm = TRUE)
+    }
+```
+
+```{r}
+temp_location <- myData1 %>%
+      group_by(Location)%>%
+      summarise(median(Temp, na.rm=TRUE))
+    
+    placeNA  <- which(is.na(myData1$Temp))
+    for (i in placeNA ) {
+      myData1$Temp[i] <- as.numeric(temp_location[temp_location$Location==myData1[i,"Location"],2])
+    }
+```
+
+*Replace Na's/blanks in Rain Today with No*
+
+```{r}
+places<- which(myData1$RainToday == "")
+```
+
+```{r}
+myData1$RainToday[places] <- as.factor("No")
+```
+
+*View structure and summary of the final treated table*
+**There are no missing values in any of the columns after treating all the columns**
+```{r}
+str(myData1)
+colSums(is.na(myData1))
+```
+
+##Creating Dummies for categorical variables 
+```{r}
+myData_dummies <- fastDummies::dummy_cols(myData1,  select_columns = c('Location','WindGustDir','WindDir','RainToday','RainTomorrow'))
+```
+
+
+```{r}
+myData_dummies$WindGustDir_ <- NULL
+myData_dummies$WindDir_ <- NULL
+myData_dummies$RainToday_ <- NULL
+```
+
+
+
+```{r}
+head(myData_dummies)
+```
+
+## Removing Outliers using z score approach
+
+```{r}
+myData_dummies$MinTempZscore <- scale(myData_dummies$MinTemp)
+nrow(myData_dummies[abs(myData_dummies$MinTempZscore)>3,])
+myData_dummies <- myData_dummies[abs(myData_dummies$MinTempZscore)<3,]
+
+myData_dummies$MaxTempZscore <- scale(myData_dummies$MaxTemp)
+nrow(myData_dummies[abs(myData_dummies$MaxTempZscore)>3,])
+myData_dummies <- myData_dummies[abs(myData_dummies$MaxTempZscore)<3,]
+
+myData_dummies$RainfallZscore <- scale(myData_dummies$Rainfall)
+nrow(myData_dummies[abs(myData_dummies$RainfallZscore)>4,])
+myData_dummies <- myData_dummies[abs(myData_dummies$RainfallZscore)<4,]
+
+myData_dummies$WindSpeedZscore <- scale(myData_dummies$WindSpeed)
+nrow(myData_dummies[abs(myData_dummies$WindSpeedZscore)>3,])
+myData_dummies <- myData_dummies[abs(myData_dummies$WindSpeedZscore)<3,]
+
+myData_dummies$WindGustSpeedZscore <- scale(myData_dummies$WindGustSpeed)
+nrow(myData_dummies[abs(myData_dummies$WindGustSpeedZscore)>3,])
+myData_dummies <- myData_dummies[abs(myData_dummies$WindGustSpeedZscore)<3,]
+
+myData_dummies$HumidityZscore <- scale(myData_dummies$Humidity)
+nrow(myData_dummies[abs(myData_dummies$HumidityZscore)>3,])
+
+myData_dummies$PressureZscore <- scale(myData_dummies$Pressure)
+nrow(myData_dummies[abs(myData_dummies$PressureZscore)>3,])
+myData_dummies <- myData_dummies[abs(myData_dummies$PressureZscore)<3,]
+
+myData_dummies$TempZscore <- scale(myData_dummies$Temp)
+nrow(myData_dummies[abs(myData_dummies$TempZscore)>3,])
+myData_dummies <- myData_dummies[abs(myData_dummies$TempZscore)<3,]
+
+myData_dummies$MinTempZscore <- NULL
+
+myData_dummies$MaxTempZscore <- NULL
+
+myData_dummies$RainfallZscore <- NULL
+
+myData_dummies$WindSpeedZscore <- NULL
+
+myData_dummies$WindGustSpeedZscore <- NULL
+
+myData_dummies$HumidityZscore <- NULL
+
+myData_dummies$PressureZscore <- NULL
+
+myData_dummies$TempZscore <- NULL
+```
+## OUR DATA IS CLEANED
+
+# Step 2: EDA
+
+
+
+```{r}
+Plot1 <- ggplot(myData_dummies,aes(RainTomorrow,MaxTemp))+geom_boxplot(aes(fill=RainTomorrow))+
+             xlab("Rain Tomorrow or not")+ ylab("Max Temperature")+ ggtitle("Box plot of Max Temperature by Rain Tomorrow or not")
+Plot1
+```
+
+**Analysis: We can observe that when it does not rain tomorrow the median Max Temperature is higher**
+
+
+
+```{r}
+Plot2 <- ggplot(myData_dummies,aes(RainTomorrow,WindGustSpeed))+geom_col(aes(fill=RainTomorrow))+
+             xlab("Rain Tomorrow or not")+ ylab("WindGustSpeed")+ ggtitle("Box plot of WindGustSpeed by Rain Tomorrow or not")
+Plot2
+```
+
+**Analysis: We can observe that when it rains tomorrow the median Wind Gust Speed is higher**
+
+
+```{r}
+Plot3 <- ggplot(myData_dummies,aes(RainTomorrow,WindSpeed))+geom_boxplot(aes(fill=RainTomorrow))+
+             xlab("Rain Tomorrow or not")+ ylab("WindSpeed")+ ggtitle("Box plot of WindSpeed by Rain Tomorrow or not")
+Plot3
+```
+
+**Analysis: We can observe that when it rains tomorrow the median Wind Speed is higher**
+
+```{r}
+plot4 <- ggplot(myData_dummies,aes(RainTomorrow,Temp))+geom_boxplot(aes(fill=RainTomorrow))+
+             xlab("Rain Tomorrow or not")+ ylab("Temperature")+ ggtitle("Temperature by Rain Tomorrow or not")
+plot4
+```
+
+**Analysis: We can observe that when it does not rain tomorrow the median temperature is higher**
+
+
+
+```{r}
+Plot5 <- ggplot(myData_dummies,aes(RainTomorrow,Pressure))+geom_col(aes(fill=RainTomorrow))+
+             xlab("Rain Tomorrow or not")+ ylab("Pressure")+ ggtitle("Box plot of Pressure by Rain Tomorrow or not")
+Plot5
+```
+
+**Analysis: We can observe that when it does not rain tomorrow the median pressure is higher**
+
+
+```{r}
+Plot6 <- ggplot(myData_dummies,aes(RainTomorrow,Humidity))+geom_col(aes(fill=RainTomorrow))+
+             xlab("Rain Tomorrow or not")+ ylab("Humidity")+ ggtitle("Box plot of Humidity by Rain Tomorrow or not")
+Plot6
+```
+
+**Analysis: We can observe that when it rains tomorrow the median Humidity is higher**
+
+# Step3: CLUSTERING
+
+```{r}
+myData_cluster <- myData_dummies
+```
+
+**Remove the Categorical non dummy columns to perform clustering and also remove the target variable Rain Tomorrow Yes**
+```{r}
+myData_cluster$Location <- NULL
+myData_cluster$WindGustDir <- NULL
+myData_cluster$WindDir <- NULL
+myData_cluster$RainToday <- NULL
+myData_cluster$RainTomorrow <- NULL
+myData_cluster$RainToday_No <- NULL
+myData_cluster$RainTomorrow_No <- NULL
+myData_cluster$RainTomorrow_Yes <- NULL
+
+```
+
+### Normalising Data
+```{r}
+normalize <- function(x) {
+return ((x - min(x)) / (max(x) - min(x)))
+}
+```
+
+```{r}
+myData_cluster$MinTemp <- normalize(myData_cluster$MinTemp)
+myData_cluster$MaxTemp <- normalize(myData_cluster$MaxTemp)
+myData_cluster$Rainfall <- normalize(myData_cluster$Rainfall)
+myData_cluster$WindGustSpeed <- normalize(myData_cluster$WindGustSpeed)
+myData_cluster$WindSpeed <- normalize(myData_cluster$WindSpeed)
+myData_cluster$Humidity <- normalize(myData_cluster$Humidity)
+myData_cluster$Pressure <- normalize(myData_cluster$Pressure)
+myData_cluster$Temp <- normalize(myData_cluster$Temp)
+str(myData_cluster)
+```
+# Kmeans
+
+### Using Elbow Curve to identify the optimum number of clusters
+```{r}
+set.seed(10)
+wss <- function(k){
+  return(kmeans(myData_cluster, k, nstart = 25)$tot.withinss)
+}
+
+```
+
+```{r}
+k_values <- 1:6
+wss_values <-c()
+for (i in k_values)
+{
+  
+  wss_values<- c(wss_values,wss(i))
+}
+plot(x = k_values, y = wss_values, 
+     type = "b", frame = F,
+     xlab = "Number of clusters K",
+     ylab = "Total within-clusters sum of square")
+```
+
+
+*Analysis: We can observe that the steep drop in SSE reduces after K = 2 and the drop becomes more gradual. Therefore optimum number of cluster would be 2*
+
+*The Hyperparameters for K Means Clustering are Number of Clusters K, initial choice of centroids & number of repeats, i.e. centers, nstart, iter.max are the hyperparameters that can be tuned to optimize the objective function for K Means which is total sum of squared errors (tot.withinss)*
+
+*The best model will have the lowest total SSE*
+
+```{r}
+km1 <- kmeans(myData_cluster, centers = 2, nstart = 50, iter.max = 100, algorithm = "Hartigan-Wong")
+str(km1)
+
+km2 <- kmeans(myData_cluster, centers = 2, nstart = 150, iter.max = 350)
+str(km2)
+
+km3 <- kmeans(myData_cluster, centers = 3, nstart = 50, iter.max = 100)
+str(km3)
+
+km4 <- kmeans(myData_cluster, centers = 3, nstart = 150, iter.max = 350)
+str(km4)
+```
+Total sum of squared errors:
+```{r}
+
+km1$tot.withinss
+km2$tot.withinss
+km3$tot.withinss
+km4$tot.withinss
+
+```
+  
+```{r}
+# plots to compare
+p1 <- fviz_cluster(km1, data = myData_cluster,geom = "point",repel = FALSE,ggtheme = theme_minimal(),alpha=0.02,shape = 19,ellipse.type = "norm") + ggtitle("k = 2")
+p2 <- fviz_cluster(km2, data = myData_cluster,geom = "point",repel = FALSE,ggtheme = theme_minimal(),alpha=0.02,shape = 19,ellipse.type = "norm") + ggtitle("k = 3")
+p3 <- fviz_cluster(km3, data = myData_cluster,geom = "point",repel = FALSE,ggtheme = theme_minimal(),alpha=0.02,shape = 19,ellipse.type = "norm") + ggtitle("k = 4")
+p4 <- fviz_cluster(km4, data = myData_cluster,geom = "point",repel = FALSE,ggtheme = theme_minimal(),alpha=0.02,shape = 19,ellipse.type = "norm") + ggtitle("k = 5")
+
+library(gridExtra)
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+```
+
+### Performance Evaluation
+
+*The measures of classification such as Entropy, Precision, Recall and F Score can be used to evaluate the extent to which a cluster contains objects of a single class.*
+```{r}
+length(km1$cluster[km1$cluster==1])
+length(km1$cluster[km1$cluster==2])
+```
+
+```{r}
+myData_eval <- myData_cluster
+```
+
+```{r}
+myData_eval$RainTomorrowYes <- myData_dummies$RainTomorrow_Yes
+myData_eval$clusterassigned <- km1$cluster
+```
+
+*Count of Rain Tomorrow binary labels, present in each cluster*
+```{r}
+cluster <- c(1,2)
+yes <- c(length(myData_eval[myData_eval$clusterassigned ==1 & myData_eval$RainTomorrowYes==1,1]),length(myData_eval[myData_eval$clusterassigned ==2 & myData_eval$RainTomorrowYes==1,1]))
+no <- c(length(myData_eval[myData_eval$clusterassigned ==1 & myData_eval$RainTomorrowYes==0,1]),length(myData_eval[myData_eval$clusterassigned ==2 & myData_eval$RainTomorrowYes==0,1]))
+cluster_performance_eval_df <- data.frame(cluster,yes,no)
+```
+
+
+```{r}
+ent_clust1 <- 0
+ent_clust2 <- 0
+for (i in as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==1,c("yes","no")]))) 
+  {
+ent_clust1 <- ent_clust1 + (i/sum(as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==1,c("yes","no")]))))*(log2(i/sum(as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==1,c("yes","no")])))))
+}
+ent_clust1 <- -1*(ent_clust1)
+paste("Entropy of cluster 1 is: ",ent_clust1)
+
+for (i in as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==2,c("yes","no")]))) 
+  {
+ent_clust2 <- ent_clust2 + (i/sum(as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==2,c("yes","no")]))))*(log2(i/sum(as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==2,c("yes","no")])))))
+}
+ent_clust2 <- -1*(ent_clust2)
+paste("Entropy of cluster 2 is: ",ent_clust2)
+```
+*From the below results we can observe that cluster 1 is more pure than cluster 2*
+
+
+*Measuring  Precision, Recall and F Measure of Rain Tomorrow 'Yes' in cluster 1 & cluster 2*
+```{r}
+precision_yes_clust1 = (cluster_performance_eval_df$yes[cluster_performance_eval_df$cluster==1])/sum(as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==1,c("yes","no")])))
+
+recall_yes_clust1 = (cluster_performance_eval_df$yes[cluster_performance_eval_df$cluster==1])/sum(cluster_performance_eval_df$yes)
+
+F_yes_clust1 = (2*precision_yes_clust1*recall_yes_clust1)/(precision_yes_clust1+recall_yes_clust1)
+
+paste("Precision of class Yes for Rain Tomorrow in cluster 1 is:",precision_yes_clust1)
+paste("Recall of class Yes for Rain Tomorrow in cluster 1 is:",recall_yes_clust1)
+paste("F Measure of class Yes for Rain Tomorrow in cluster 1 is:",F_yes_clust1)
+
+precision_yes_clust2 = (cluster_performance_eval_df$yes[cluster_performance_eval_df$cluster==2])/sum(as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==2,c("yes","no")])))
+
+recall_yes_clust2 = (cluster_performance_eval_df$yes[cluster_performance_eval_df$cluster==2])/sum(cluster_performance_eval_df$yes)
+
+F_yes_clust2 = (2*precision_yes_clust2*recall_yes_clust2)/(precision_yes_clust2+recall_yes_clust2)
+
+paste("Precision of class Yes for Rain Tomorrow in cluster 2 is:",precision_yes_clust2)
+paste("Recall of class Yes for Rain Tomorrow in cluster 2 is:",recall_yes_clust2)
+paste("F Measure of class Yes for Rain Tomorrow in cluster 2 is:",F_yes_clust2)
+```
+**Precision of 'Yes' in cluster 1 is the number of 'Yes' class in cluster 1 out of total number of datapoints in cluster 1**</br>
+**Recall of 'Yes' in cluster 1 is the number of 'Yes' in clutser 1 out of the total number of 'Yes' present across the 2 clusters**</br>
+**F Measure is the harmonic mean of Precision & Recall. In this case, clutser 1 has higher F measire for class 'Yes'.**
+
+
+### Since cluster 1 has higher F Measure as seen above, Cluster 1 is being used to classify Rain Tomorrow as 'Yes' and cluster 2 is used to classify Rain Tomorrow as 'No'
+```{r}
+paste("The average Rainfall for cluster 1 is: ",mean(myData_eval$Rainfall[myData_eval$clusterassigned ==1]))
+paste("The average MinTemp for cluster 1 is: ",mean(myData_eval$MinTemp[myData_eval$clusterassigned ==1]))
+paste("The average MaxTemp for cluster 1 is: ",mean(myData_eval$MaxTemp[myData_eval$clusterassigned ==1]))
+paste("The average Humidity for cluster 1 is: ",mean(myData_eval$Humidity[myData_eval$clusterassigned ==1]))
+paste("The average Pressure for cluster 1 is: ",mean(myData_eval$Pressure[myData_eval$clusterassigned ==1]))
+paste("The average Temp for cluster 1 is: ",mean(myData_eval$Temp[myData_eval$clusterassigned ==1]))
+paste("The average WindGustSpeed for cluster 1 is: ",mean(myData_eval$WindGustSpeed[myData_eval$clusterassigned ==1]))
+
+```
+
+
+```{r}
+paste("The average Rainfall for cluster 2 is: ",mean(myData_eval$Rainfall[myData_eval$clusterassigned ==2]))
+paste("The average MinTemp for cluster 2 is: ",mean(myData_eval$MinTemp[myData_eval$clusterassigned ==2]))
+paste("The average MaxTemp for cluster 2 is: ",mean(myData_eval$MaxTemp[myData_eval$clusterassigned ==2]))
+paste("The average Humidity for cluster 2 is: ",mean(myData_eval$Humidity[myData_eval$clusterassigned ==2]))
+paste("The average Pressure for cluster 2 is: ",mean(myData_eval$Pressure[myData_eval$clusterassigned ==2]))
+paste("The average Temp for cluster 2 is: ",mean(myData_eval$Temp[myData_eval$clusterassigned ==2]))
+paste("The average WindGustSpeed for cluster 2 is: ",mean(myData_eval$WindGustSpeed[myData_eval$clusterassigned ==2]))
+```
+
+
+*Classifying cluster 1 as 'Yes' & cluster 2 as 'No' for Rain Tomorrow*
+```{r}
+myData_eval$RainTomorrowYesPred <- 1
+myData_eval$RainTomorrowYesPred[myData_eval$clusterassigned==2] <- 0
+```
+
+#### Calculating Accuracy using Confusion matrix
+```{r}
+
+confusion_matrix_kmeans <- data.frame(table(myData_eval$RainTomorrowYes,myData_eval$RainTomorrowYesPred))
+colnames(confusion_matrix_kmeans) <- c("Actual class","Predicted Class","Count")
+
+Accuracy_kmeans <- sum(confusion_matrix_kmeans$Count[confusion_matrix_kmeans$`Actual class`==confusion_matrix_kmeans$`Predicted Class`])/sum(confusion_matrix_kmeans$Count)
+Precision_kmeans <- confusion_matrix_kmeans$Count[confusion_matrix_kmeans$`Actual class`==1 & confusion_matrix_kmeans$`Predicted Class`==1]/sum(confusion_matrix_kmeans$Count[confusion_matrix_kmeans$`Predicted Class`==1])
+Recall_kmeans <- confusion_matrix_kmeans$Count[confusion_matrix_kmeans$`Actual class`==1 & confusion_matrix_kmeans$`Predicted Class`==1]/sum(confusion_matrix_kmeans$Count[confusion_matrix_kmeans$`Actual class`==1])
+F1_score_kmeans <- (2*Precision_kmeans*Recall_kmeans)/(Precision_kmeans+Recall_kmeans)
+
+paste("Accuracy of K Means Algorithm in classifying Rain Tomorrow is :",Accuracy_kmeans)
+paste("Precision of K Means Algorithm in classifying Rain Tomorrow is :",Precision_kmeans)
+paste("Recall of K Means Algorithm in classifying Rain Tomorrow is :",Recall_kmeans)
+paste("F1 Score of K Means Algorithm in classifying Rain Tomorrow is :",F1_score_kmeans)
+```
+
+*The clustering model has good Accuracy and Precision in classifying the dataset into 'Yes' & 'No' classes for the Rain Tomorrow attribute.*
+
+# Step4: Hierarchical Agglomerative Clustering (HAC)
+
+*Considering half rows and reoving all dummy columns*
+```{r}
+myData_hac <- myData_cluster[seq(1,nrow(myData_cluster),2),]
+myData_hac <- myData_hac[,-9:-90]
+
+```
+
+```{r}
+hac <- hclust(dist(myData_hac, method = "euclidean"), method = "complete")
+plot(hac)
+```
+*Since HAC has no objective function that can be optimized, there is no need to fine tune the hyperparameters*
+
+*Cutting dendogram to get 2 clusters*
+```{r}
+hac_cut <- cutree(hac, 2)
+```
+
+```{r}
+hac_eval <- myData_hac
+```
+
+### HAC Performance Evaluation
+```{r}
+hac_eval$RainTomorrowYes <- myData_dummies$RainTomorrow_Yes[seq(1,nrow(myData_cluster),2)]
+hac_eval$clusterassigned <- hac_cut
+```
+
+```{r}
+cluster <- c(1,2)
+yes <- c(length(hac_eval[hac_eval$clusterassigned ==1 & hac_eval$RainTomorrowYes==1,1]),length(hac_eval[hac_eval$clusterassigned ==2 & hac_eval$RainTomorrowYes==1,1]))
+no <- c(length(hac_eval[hac_eval$clusterassigned ==1 & hac_eval$RainTomorrowYes==0,1]),length(hac_eval[hac_eval$clusterassigned ==2 & hac_eval$RainTomorrowYes==0,1]))
+cluster_performance_eval_df <- data.frame(cluster,yes,no)
+```
+
+```{r}
+ent_clust1 <- 0
+ent_clust2 <- 0
+for (i in as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==1,c("yes","no")]))) 
+  {
+ent_clust1 <- ent_clust1 + (i/sum(as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==1,c("yes","no")]))))*(log2(i/sum(as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==1,c("yes","no")])))))
+}
+ent_clust1 <- -1*(ent_clust1)
+paste("Entropy of cluster 1 is: ",ent_clust1)
+
+for (i in as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==2,c("yes","no")]))) 
+  {
+ent_clust2 <- ent_clust2 + (i/sum(as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==2,c("yes","no")]))))*(log2(i/sum(as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==2,c("yes","no")])))))
+}
+ent_clust2 <- -1*(ent_clust2)
+paste("Entropy of cluster 2 is: ",ent_clust2)
+```
+*From the below results we can observe that cluster 2 is more pure than cluster 1*
+
+
+*Measure of Precision, Recall & F Measure of Rain Tomorrow 'Yes' in cluster 1 & cluster 2*
+
+```{r}
+precision_yes_clust1 = (cluster_performance_eval_df$yes[cluster_performance_eval_df$cluster==1])/sum(as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==1,c("yes","no")])))
+
+recall_yes_clust1 = (cluster_performance_eval_df$yes[cluster_performance_eval_df$cluster==1])/sum(cluster_performance_eval_df$yes)
+
+F_yes_clust1 = (2*precision_yes_clust1*recall_yes_clust1)/(precision_yes_clust1+recall_yes_clust1)
+
+paste("Precision of class Yes for Rain Tomorrow in cluster 1 is:",precision_yes_clust1)
+paste("Recall of class Yes for Rain Tomorrow in cluster 1 is:",recall_yes_clust1)
+paste("F Measure of class Yes for Rain Tomorrow in cluster 1 is:",F_yes_clust1)
+
+precision_yes_clust2 = (cluster_performance_eval_df$yes[cluster_performance_eval_df$cluster==2])/sum(as.numeric(as.vector(cluster_performance_eval_df[cluster_performance_eval_df$cluster==2,c("yes","no")])))
+
+recall_yes_clust2 = (cluster_performance_eval_df$yes[cluster_performance_eval_df$cluster==2])/sum(cluster_performance_eval_df$yes)
+
+F_yes_clust2 = (2*precision_yes_clust2*recall_yes_clust2)/(precision_yes_clust2+recall_yes_clust2)
+
+paste("Precision of class Yes for Rain Tomorrow in cluster 2 is:",precision_yes_clust2)
+paste("Recall of class Yes for Rain Tomorrow in cluster 2 is:",recall_yes_clust2)
+paste("F Measure of class Yes for Rain Tomorrow in cluster 2 is:",F_yes_clust2)
+```
+*clutser 1 has higher F measure for class 'Yes'.*
+
+#### Since cluster 1 has higher F Measure, Cluster 1 is being used to classify Rain Tomorrow as 'Yes' and cluster 2 is used to classify the Rain Tomorrow as 'No'.
+
+```{r}
+paste("The average Rainfall for cluster 1 is: ",mean(hac_eval$Rainfall[hac_eval$clusterassigned ==1]))
+paste("The average MinTemp for cluster 1 is: ",mean(hac_eval$MinTemp[hac_eval$clusterassigned ==1]))
+paste("The average MaxTemp for cluster 1 is: ",mean(hac_eval$MaxTemp[hac_eval$clusterassigned ==1]))
+paste("The average Humidity for cluster 1 is: ",mean(hac_eval$Humidity[hac_eval$clusterassigned ==1]))
+paste("The average Pressure for cluster 1 is: ",mean(hac_eval$Pressure[hac_eval$clusterassigned ==1]))
+paste("The average Temp for cluster 1 is: ",mean(hac_eval$Temp[hac_eval$clusterassigned ==1]))
+paste("The average WindGustSpeed for cluster 1 is: ",mean(hac_eval$WindGustSpeed[hac_eval$clusterassigned ==1]))
+
+```
+
+
+```{r}
+paste("The average Rainfall for cluster 2 is: ",mean(hac_eval$Rainfall[hac_eval$clusterassigned ==2]))
+paste("The average MinTemp for cluster 2 is: ",mean(hac_eval$MinTemp[hac_eval$clusterassigned ==2]))
+paste("The average MaxTemp for cluster 2 is: ",mean(hac_eval$MaxTemp[hac_eval$clusterassigned ==2]))
+paste("The average Humidity for cluster 2 is: ",mean(hac_eval$Humidity[hac_eval$clusterassigned ==2]))
+paste("The average Pressure for cluster 2 is: ",mean(hac_eval$Pressure[hac_eval$clusterassigned ==2]))
+paste("The average Temp for cluster 2 is: ",mean(hac_eval$Temp[hac_eval$clusterassigned ==2]))
+paste("The average WindGustSpeed for cluster 2 is: ",mean(hac_eval$WindGustSpeed[hac_eval$clusterassigned ==2]))
+```
+
+
+
+*Classifying cluster 1 as 'Yes' & cluster 2 as 'No' for Rain Tomorrow*
+```{r}
+hac_eval$RainTomorrowYesPred <- 1
+hac_eval$RainTomorrowYesPred[hac_eval$clusterassigned==2] <- 0
+```
+
+#### Accuracy measurement using confusion Matrix
+
+```{r}
+
+confusion_matrix_kmeans <- data.frame(table(hac_eval$RainTomorrowYes,hac_eval$RainTomorrowYesPred))
+colnames(confusion_matrix_kmeans) <- c("Actual class","Predicted Class","Count")
+
+Accuracy_kmeans <- sum(confusion_matrix_kmeans$Count[confusion_matrix_kmeans$`Actual class`==confusion_matrix_kmeans$`Predicted Class`])/sum(confusion_matrix_kmeans$Count)
+Precision_kmeans <- confusion_matrix_kmeans$Count[confusion_matrix_kmeans$`Actual class`==1 & confusion_matrix_kmeans$`Predicted Class`==1]/sum(confusion_matrix_kmeans$Count[confusion_matrix_kmeans$`Predicted Class`==1])
+Recall_kmeans <- confusion_matrix_kmeans$Count[confusion_matrix_kmeans$`Actual class`==1 & confusion_matrix_kmeans$`Predicted Class`==1]/sum(confusion_matrix_kmeans$Count[confusion_matrix_kmeans$`Actual class`==1])
+F1_score_kmeans <- (2*Precision_kmeans*Recall_kmeans)/(Precision_kmeans+Recall_kmeans)
+
+paste("Accuracy of HAC Algorithm in classifying Rain Tomorrow is :",Accuracy_kmeans)
+paste("Precision of HAC Algorithm in classifying Rain Tomorrow is :",Precision_kmeans)
+paste("Recall of HAC Algorithm in classifying Rain Tomorrow is :",Recall_kmeans)
+paste("F1 Score of HAC Algorithm in classifying Rain Tomorrow is :",F1_score_kmeans)
+```
+
+
+```{r}
+Eval_df <- c("Accuracy","Precision","Recall","F1 Score")
+KMeans_including_dummies <- c(0.656148464129806,0.734845360824742,0.443946188340807,0.553502096598851)
+HAC_without_dummies <- c(0.582482857598469,0.545475759873986,0.777094414893617,0.641003667774997)
+data.frame(Eval_df,KMeans_including_dummies,HAC_without_dummies)
+```
+*We can observe that KMeans including dummy variables has the highest accuracy in classifying but HAC has the highest Recall & F1 score.*
+
+
+### DECISION TREE INDUCTION
+
+*Decision Tree is robust to outliers*
+```{r}
+decision_tree <- myData1
+```
+
+```{r}
+library(caret)
+library(rpart)
+```
+
+*Generating Training and Test datasets for decision tree with 60% & 40% splits respectively*
+```{r}
+
+train_indices <- sample(seq_len(nrow(decision_tree)),size = 0.7*(nrow(decision_tree)))
+ decision_tree_trainData <- decision_tree[train_indices,]      ### TRAINING DATA
+  rownames(decision_tree_trainData) <- NULL
+ decision_tree_testData <- decision_tree[-train_indices,]      ### TESTING DATA
+ rownames(decision_tree_testData) <- NULL
+ 
+```
+
+*Building a Decision Tree model*
+```{r}
+decision_tree_model <- train(RainTomorrow ~ ., data = decision_tree_trainData, method = "rpart",
+                       metric = "Accuracy",
+                       tuneLength = 6)
+```
+
+*6 models were tuned and the model with lowest cp produced the highest accuracy, which was used as the final resulting model*
+```{r}
+print(decision_tree_model)
+```
+
+
+*Making Classifications on Test Data using the Decision Tree Model built above using the Training data*
+```{r}
+decision_tree_predict <- predict(decision_tree_model, newdata = decision_tree_testData, na.action = na.omit, type = "raw")
+
+```
+
+*Accuracy using Confusion Matrix*
+```{r}
+decision_tree_testData$predicted_rain_tomorrow <- decision_tree_predict
+conf_matrix <- data.frame(table(decision_tree_testData$RainTomorrow,decision_tree_testData$predicted_rain_tomorrow)) 
+colnames(conf_matrix)<- c('Actual class','Predicted Class','Count')
+
+Accuracy_DT <- sum(conf_matrix$Count[conf_matrix$`Actual class`==conf_matrix$`Predicted Class`])/sum(conf_matrix$Count)
+Precision_DT <- conf_matrix$Count[conf_matrix$`Actual class`=='Yes' & conf_matrix$`Predicted Class`=='Yes']/sum(conf_matrix$Count[conf_matrix$`Predicted Class`=='Yes'])
+Recall_DT <- conf_matrix$Count[conf_matrix$`Actual class`=='Yes' & conf_matrix$`Predicted Class`=='Yes']/sum(conf_matrix$Count[conf_matrix$`Actual class`=='Yes'])
+F1_score_DT <- (2*Precision_DT*Recall_DT)/(Precision_DT+Recall_DT)
+
+paste("Accuracy of DT Algorithm in classifying Rain Tomorrow is :",Accuracy_DT)
+paste("Precision of DT Algorithm in classifying Rain Tomorrow is :",Precision_DT)
+paste("Recall of DT Algorithm in classifying Rain Tomorrow is :",Recall_DT)
+paste("F1 Score of DT Algorithm in classifying Rain Tomorrow is :",F1_score_DT)
+```
+
+#### Hyperparameters are minbucket, minsplit and maxdepth alongwith CP for tuning the model
+*minsplit, maxdepth and minbucket should be adjusted so as to pre prune the model to produce a least complex model(to reduce overfitting and variance) with maximum accuracy (to minimize bias)*
+
+## Not running while knitting to HTML
+
+#```{r}
+#gridsearch <- list(minsplit = c(20,15,10,5),
+#           maxdepth = c(30,25,20,15),
+#           minbucket = c(6,5,4,3)) %>% 
+#  cross_df()
+#```
+
+*Performing Grid Search with all combinations of different values of minsplit, maxdepth and minbucket created above and measuring the accuracy for each combination*
+#```{r}
+#accuracy_values <- c()
+#for (i in seq(1,nrow(gridsearch))) {
+  
+#  dt_model_weather2 <- train(RainTomorrow ~ ., data = decision_tree_trainData,method = "rpart",metric = "Accuracy",
+#                       tuneLength = 8,control = rpart.control(minsplit =as.numeric(gridsearch[i,"minsplit"]), minbucket = #as.numeric(gridsearch[i,"minbucket"]),       maxdepth = as.numeric(gridsearch[i,"maxdepth"])))
+#  accuracy_values<- c(accuracy_values,max(dt_model_weather2$results$Accuracy))
+  
+   
+#}
+#```
+
+##### Displaying the Accuracy of 64 Decision Tree Models for different combinations of the hyperparameters
+
+#```{r}
+#gridsearch$accuracy <- accuracy_values
+#gridsearch[order(-gridsearch$accuracy),]
+#```
+*Since Accuracy is a good measure of model performance We can see that the first row below with minsplit = 15, maxdepth =  30, minbucket = 5 has the best accuracy and hence can be considered the best model.*
+
+*Based on Occam's Razor principle, we need to chose a simpler model, amongst the models that produce the same accuracy*
+
+*Creating a decision tree model with maxdepth 15 for minsplit 15 & minbucket 5 so as avoid overfitting and reduce estimate variance*
+
+```{r}
+ decision_tree_model2 <- train(RainTomorrow ~ ., data = decision_tree_trainData,method = "rpart",metric = "Accuracy",
+                       tuneLength = 8,control = rpart.control(minsplit = 15, minbucket = 5, maxdepth = 15))
+print(decision_tree_model2)
+```
+**The Decision Tree Model is producing a Training accuracy of 76.08%**
+
+*Using the best performing model*
+```{r}
+decision_tree_predict <- predict(decision_tree_model2, newdata = decision_tree_testData, na.action = na.omit, type = "raw")
+```
+
+
+*calculating Accuracy Precision and Recall on the classification done on the Test Data by using the Confusion Matrix*
+```{r}
+decision_tree_testData$predicted_rain_tomorrow <- decision_tree_predict
+conf_matrix <- data.frame(table(decision_tree_testData$RainTomorrow,decision_tree_testData$predicted_rain_tomorrow)) 
+colnames(conf_matrix)<- c('Actual class','Predicted Class','Count')
+
+Accuracy_DT <- sum(conf_matrix$Count[conf_matrix$`Actual class`==conf_matrix$`Predicted Class`])/sum(conf_matrix$Count)
+Precision_DT <- conf_matrix$Count[conf_matrix$`Actual class`=='Yes' & conf_matrix$`Predicted Class`=='Yes']/sum(conf_matrix$Count[conf_matrix$`Predicted Class`=='Yes'])
+Recall_DT <- conf_matrix$Count[conf_matrix$`Actual class`=='Yes' & conf_matrix$`Predicted Class`=='Yes']/sum(conf_matrix$Count[conf_matrix$`Actual class`=='Yes'])
+F1_score_DT <- (2*Precision_DT*Recall_DT)/(Precision_DT+Recall_DT)
+
+paste("Accuracy of DT Algorithm in classifying Rain Tomorrow is :",Accuracy_DT)
+paste("Precision of DT Algorithm in classifying Rain Tomorrow is :",Precision_DT)
+paste("Recall of DT Algorithm in classifying Rain Tomorrow is :",Recall_DT)
+paste("F1 Score of DT Algorithm in classifying Rain Tomorrow is :",F1_score_DT)
+```
+
+```{r}
+library(rattle)
+```
+
+*Decision Tree Plot*
+```{r}
+fancyRpartPlot(decision_tree_model2$finalModel, main = "Decision Tree to classify Rain Tomorrow")
+```
+
+
+### ROC & AUROC for Decision Tree Induction
+
+```{r}
+library(pROC)
+```
+
+*Generated ROC curve and calculated Area Under Curve metric for the identified best performing decision tree model*
+```{r}
+decision_tree_prob <- predict(decision_tree_model2, newdata = decision_tree_testData, na.action = na.omit, type = "prob")
+roc_curve <- roc(decision_tree_testData$RainTomorrow,decision_tree_prob$Yes)
+plot(roc_curve)
+```
+
+
+```{r}
+paste("Area Under the ROC curve is :",auc(roc_curve))
+```
+**Obtained an area of 0.8154 under the ROC curve**
+
+
+# TEST DATA
+
+### Reading the Testing data csv and storing it into a dataframe
+```{r}
+myData_test <- read.csv("Weather Forecast Testing.csv")
+View(myData_test)
+```
+
+
+
+
+# Step1: Data Cleaning
+
+## Removing NA's
+
+### Discarding these columns as they consist dirty data i.e missing values >50%
+```{r}
+myData_test$Evaporation <- NULL
+myData_test$Sunshine <- NULL
+myData_test$Cloud <- NULL
+```
+
+*mode function*
+```{r}
+  getmode <- function(m) {
+  um <- na.omit(unique(m) )
+ tab <- tabulate(match(m, um)); um[tab == max(tab) ]
+}
+```
+
+```{r}
+
+      MinTemp_location <- myData_test %>%
+      group_by(Location)%>%
+      summarise(median(MinTemp, na.rm=TRUE))
+    
+    placeNA <- which(is.na(myData_test$MinTemp))
+    for (i in placeNA) {
+      myData_test$MinTemp[i] <- as.numeric(MinTemp_location[MinTemp_location$Location==myData_test[i,"Location"],2])
+    }
+    
+
+```
+
+```{r}
+MaxTemp_location <- myData_test %>%
+      group_by(Location)%>%
+      summarise(median(MaxTemp, na.rm=TRUE))
+    
+    placeNA  <- which(is.na(myData_test$MaxTemp))
+    for (i in placeNA ) {
+      myData_test$MaxTemp[i] <- as.numeric(MaxTemp_location[MaxTemp_location$Location==myData_test[i,"Location"],2])
+    }
+```
+
+
+```{r}
+Rainfall_location <- myData_test %>%
+      group_by(Location)%>%
+      summarise(median(Rainfall, na.rm=TRUE))
+    
+    placeNA  <- which(is.na(myData_test$Rainfall))
+    for (i in placeNA ) {
+      myData_test$Rainfall[i] <- as.numeric(Rainfall_location[Rainfall_location$Location==myData_test[i,"Location"],2])
+    }
+```
+
+```{r}
+
+    placeNA  <- which((myData_test$WindGustDir == ''))
+    for (i in placeNA ) {
+      myData_test$WindGustDir[i] <- getmode(myData_test$WindGustDir)
+    }
+```
+
+```{r}
+myData_test$WindGustSpeed[which(is.na(myData_test$WindGustSpeed))] <- median(myData_test$WindGustSpeed, na.rm = TRUE)
+```
+
+```{r}
+
+    placeNA  <- which(myData_test$WindDir == "")
+   for (i in placeNA ) {
+      myData_test$WindDir[i] <- getmode(myData_test$WindDir)
+    }
+```
+
+```{r}
+windspeed_location <- myData_test %>%
+      group_by(Location)%>%
+      summarise(median(WindSpeed, na.rm=TRUE))
+    
+    placeNA  <- which(is.na(myData_test$WindSpeed))
+    for (i in placeNA ) {
+      myData_test$WindSpeed[i] <- as.numeric(windspeed_location[windspeed_location$Location==myData_test[i,"Location"],2])
+    }
+```
+
+```{r}
+humidity_location <- myData_test %>%
+      group_by(Location)%>%
+      summarise(median(Humidity, na.rm=TRUE))
+    
+    placeNA  <- which(is.na(myData_test$Humidity))
+    for (i in placeNA ) {
+      myData_test$Humidity[i] <- as.numeric(humidity_location[humidity_location$Location==myData_test[i,"Location"],2])
+    }
+
+```
+
+```{r}
+placeNA  <- which(is.na(myData_test$Pressure))
+    for (i in placeNA ) {
+      myData_test$Pressure[i] <- median(myData_test$Pressure, na.rm = TRUE)
+    }
+```
+
+```{r}
+temp_location <- myData_test %>%
+      group_by(Location)%>%
+      summarise(median(Temp, na.rm=TRUE))
+    
+    placeNA  <- which(is.na(myData_test$Temp))
+    for (i in placeNA ) {
+      myData_test$Temp[i] <- as.numeric(temp_location[temp_location$Location==myData_test[i,"Location"],2])
+    }
+```
+
+*Replace Na's/blanks in Rain Today with No*
+
+```{r}
+places<- which(myData_test$RainToday == "")
+```
+
+```{r}
+myData_test$RainToday[places] <- as.factor("No")
+```
+
+*View structure and summary of the final treated table*
+**There are no missing values in any of the columns after treating all the columns**
+```{r}
+str(myData_test)
+colSums(is.na(myData_test))
+```
+
+##Creating Dummies for categorical variables 
+```{r}
+myData_test_dummies <- fastDummies::dummy_cols(myData_test,  select_columns = c('Location','WindGustDir','WindDir','RainToday'))
+
+```
+
+```{r}
+myData_test_dummies$WindGustDir_ <- NULL
+myData_test_dummies$WindDir_ <- NULL
+myData_test_dummies$RainToday_ <- NULL
+```
+
+```{r}
+myData_test_cluster <- myData_test_dummies
+```
+
+
+**Remove the Categorical non dummy columns to perform clustering on Test Data and also remove the target variable Rain Tomorrow Yes**
+```{r}
+myData_test_cluster$Location <- NULL
+myData_test_cluster$WindGustDir <- NULL
+myData_test_cluster$WindDir <- NULL
+myData_test_cluster$RainToday <- NULL
+myData_test_cluster$RainTomorrow <- NULL
+myData_test_cluster$RainToday_No <- NULL
+myData_test_cluster$ID<-NULL
+
+```
+
+
+**
+
+#Normalising
+```{r}
+normalize <- function(x) {
+return ((x - min(x)) / (max(x) - min(x)))
+}
+```
+
+*Normalizing all the numeric columns*
+```{r}
+myData_test_cluster$MinTemp <- normalize(myData_test_cluster$MinTemp)
+myData_test_cluster$MaxTemp <- normalize(myData_test_cluster$MaxTemp)
+myData_test_cluster$Rainfall <- normalize(myData_test_cluster$Rainfall)
+myData_test_cluster$WindGustSpeed <- normalize(myData_test_cluster$WindGustSpeed)
+myData_test_cluster$WindSpeed <- normalize(myData_test_cluster$WindSpeed)
+myData_test_cluster$Humidity <- normalize(myData_test_cluster$Humidity)
+myData_test_cluster$Pressure <- normalize(myData_test_cluster$Pressure)
+myData_test_cluster$Temp <- normalize(myData_test_cluster$Temp)
+```
+
+
+```{r}
+str(myData_test_cluster)
+summary(myData_test_cluster)
+```
+
+
+#Kmeans
+**Excluding Dummies**
+```{r}
+myData_test_cluster2 <- myData_test_cluster[,-9:-90]
+str(myData_test_cluster2)
+summary(myData_test_cluster2)
+```
+
+
+```{r}
+km_test <- kmeans(myData_test_cluster2, centers = 2, nstart = 25, iter.max = 100)
+str(km_test)
+```
+
+*Total SSE is 1423*
+
+*Cluster plot*
+```{r}
+fviz_cluster(km_test, data = myData_test_cluster2,geom = "point",repel = FALSE,ggtheme = theme_minimal(),alpha=0.02,shape = 19,ellipse.type = "norm") + ggtitle("TEST DATA CLUSTER")
+```
+
+
+```{r}
+length(km_test$cluster[km_test$cluster==1])
+length(km_test$cluster[km_test$cluster==2])
+```
+
+```{r}
+myData_test_cluster2$clusterassigned <- km_test$cluster
+```
+
+#### summary statistics to support why cluster 1 should be used to classify Rain Tomorrow as 'Yes'
+
+```{r}
+paste("The average Rainfall for cluster 1 is: ",mean(myData_test_cluster2$Rainfall[myData_test_cluster2$clusterassigned ==1]))
+paste("The average MinTemp for cluster 1 is: ",mean(myData_test_cluster2$MinTemp[myData_test_cluster2$clusterassigned ==1]))
+paste("The average MaxTemp for cluster 1 is: ",mean(myData_test_cluster2$MaxTemp[myData_test_cluster2$clusterassigned ==1]))
+paste("The average Humidity for cluster 1 is: ",mean(myData_test_cluster2$Humidity[myData_test_cluster2$clusterassigned ==1]))
+paste("The average Pressure for cluster 1 is: ",mean(myData_test_cluster2$Pressure[myData_test_cluster2$clusterassigned ==1]))
+paste("The average Temp for cluster 1 is: ",mean(myData_test_cluster2$Temp[myData_test_cluster2$clusterassigned ==1]))
+paste("The average WindGustSpeed for cluster 1 is: ",mean(myData_test_cluster2$WindGustSpeed[myData_test_cluster2$clusterassigned ==1]))
+
+```
+
+
+```{r}
+paste("The average Rainfall for cluster 2 is: ",mean(myData_test_cluster2$Rainfall[myData_test_cluster2$clusterassigned ==2]))
+paste("The average MinTemp for cluster 2 is: ",mean(myData_test_cluster2$MinTemp[myData_test_cluster2$clusterassigned ==2]))
+paste("The average MaxTemp for cluster 2 is: ",mean(myData_test_cluster2$MaxTemp[myData_test_cluster2$clusterassigned ==2]))
+paste("The average Humidity for cluster 2 is: ",mean(myData_test_cluster2$Humidity[myData_test_cluster2$clusterassigned ==2]))
+paste("The average Pressure for cluster 2 is: ",mean(myData_test_cluster2$Pressure[myData_test_cluster2$clusterassigned ==2]))
+paste("The average Temp for cluster 2 is: ",mean(myData_test_cluster2$Temp[myData_test_cluster2$clusterassigned ==2]))
+paste("The average WindGustSpeed for cluster 2 is: ",mean(myData_test_cluster2$WindGustSpeed[myData_test_cluster2$clusterassigned ==1]))
+
+```
+
+*Classifying cluster 1 as 'Yes' & cluster 2 as 'No' for Rain Tomorrow on the testing dataset*
+```{r}
+myData_test_cluster2$RainTomorrowPred<- 'Yes'
+myData_test_cluster2$RainTomorrowPred[myData_test_cluster2$clusterassigned==2] <- 'No'
+myData_test_cluster2$ID <- myData_test_dummies$ID
+```
+
+
+```{r}
+str(myData_test_cluster2)
+summary(myData_test_cluster2)
+```
+
+
+# HAC
+
+```{r}
+test_hac <- myData_test_cluster[,-9:-90]
+```
+
+```{r}
+str(test_hac)
+summary(test_hac)
+```
+
+```{r}
+test_hac_output <- hclust(dist(test_hac, method = "euclidean"), method = "complete")
+plot(test_hac_output)
+```
+
+*cut the above dendogram to produce 2 clusters*
+```{r}
+hac_cut_test <- cutree(test_hac_output, 2)
+```
+
+*Assigining the clusters to the dataset*
+```{r}
+test_hac$clusterassigned_hac <- hac_cut_test
+```
+
+
+```{r}
+table(test_hac$clusterassigned_hac)
+```
+
+
+#### summary statistics to support why cluster 1 should be used to classify Rain Tomorrow as 'Yes'
+
+```{r}
+paste("The average Rainfall for cluster 1 is: ",mean(test_hac$Rainfall[test_hac$clusterassigned_hac ==1]))
+paste("The average MinTemp for cluster 1 is: ",mean(test_hac$MinTemp[test_hac$clusterassigned_hac ==1]))
+paste("The average MaxTemp for cluster 1 is: ",mean(test_hac$MaxTemp[test_hac$clusterassigned_hac ==1]))
+paste("The average Humidity for cluster 1 is: ",mean(test_hac$Humidity[test_hac$clusterassigned_hac ==1]))
+paste("The average Pressure for cluster 1 is: ",mean(test_hac$Pressure[test_hac$clusterassigned_hac ==1]))
+paste("The average Temp for cluster 1 is: ",mean(test_hac$Temp[test_hac$clusterassigned_hac ==1]))
+paste("The average WindGustSpeed for cluster 1 is: ",mean(test_hac$WindGustSpeed[test_hac$clusterassigned_hac ==1]))
+
+```
+
+```{r}
+paste("The average Rainfall for cluster 2 is: ",mean(test_hac$Rainfall[test_hac$clusterassigned_hac ==2]))
+paste("The average MinTemp for cluster 2 is: ",mean(test_hac$MinTemp[test_hac$clusterassigned_hac ==2]))
+paste("The average MaxTemp for cluster 2 is: ",mean(test_hac$MaxTemp[test_hac$clusterassigned_hac ==2]))
+paste("The average Humidity for cluster 2 is: ",mean(test_hac$Humidity[test_hac$clusterassigned_hac ==2]))
+paste("The average Pressure for cluster 2 is: ",mean(test_hac$Pressure[test_hac$clusterassigned_hac ==2]))
+paste("The average Temp for cluster 2 is: ",mean(test_hac$Temp[test_hac$clusterassigned_hac ==2]))
+paste("The average WindGustSpeed for cluster 2 is: ",mean(test_hac$WindGustSpeed[test_hac$clusterassigned_hac ==1]))
+
+```
+
+*Classifying cluster 1 as 'Yes' & cluster 2 as 'No' for Rain Tomorrow on the testing dataset*
+```{r}
+test_hac$RainTomorrowPred_hac <- 'Yes'
+test_hac$RainTomorrowPred_hac[test_hac$clusterassigned==2] <- 'No'
+test_hac$ID <- myData_test_dummies$ID
+```
+
+
+```{r}
+str(test_hac)
+summary(test_hac)
+```
+
+
+# DECISION TREE
+
+*Using the final best performing Decision Tree model that produced unbiased and low variance estimates to predict the classes (classify) on the cleaned test dataset*
+```{r}
+decision_tree_test <- predict(decision_tree_model2, newdata = myData_test, na.action = na.omit, type = "raw")
+```
+
+
+*Evaluating Model Performance by calculating Accuracy Precision and Recall on the classification done on the Test Data by using the Confusion Matrix*
+
+```{r}
+myData_test$predicted_rain_tomorrow_dt <- decision_tree_test
+```
+
+
+```{r}
+table(myData_test$predicted_rain_tomorrow_dt)
+```
+
+```{r}
+str(myData_test)
+summary(myData_test)
+```
+
+#### Creating Final Test Data set by merging KMeans, HAC & DT with the 3 predictions for Rain Tomorrow
+```{r}
+
+myData_testing_predictions <- merge(merge(myData_test, myData_test_cluster2, by="ID"),test_hac,by = 'ID')
+
+myData_testing_predictions_csv <- myData_testing_predictions[,c('ID','RainTomorrowPred','RainTomorrowPred_hac','predicted_rain_tomorrow_dt')]
+colnames(myData_testing_predictions_csv) <- c('ID','kmeans','HAC','DT')
+rownames(myData_testing_predictions_csv)<-NULL
+```
+
+
+*SUMMARIZING THE Predictions made for Rain Tomorrow on the Test Data by the 3 algorithms*
+```{r}
+predictions_summary <- data.frame(table(myData_testing_predictions_csv$kmeans),
+           table(myData_testing_predictions_csv$HAC),
+           table(myData_testing_predictions_csv$DT)) 
+predictions_summary <- predictions_summary[,c(1,2,4,6)]
+colnames(predictions_summary) <- c('Predicted Rain Tomorrow','kmeans','HAC','DT')
+predictions_summary
+```
+
+*Writing to CSV*
+```{r}
+
+write.csv(myData_testing_predictions_csv,"HW02_AKSHAY_Predictions.csv")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
